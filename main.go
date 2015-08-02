@@ -7,6 +7,11 @@ import (
 )
 
 func main() {
-	external.LoadAndStart()
+	ft := external.Fetcher{
+		ConfigurationDir: "conf/active/",
+		BackupDir:        "content/backup/",
+		ContentDir:       "content/",
+	}
+	ft.Start()
 	fmt.Scanln()
 }

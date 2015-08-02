@@ -6,16 +6,24 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v2"
 )
 
-const (
-	configurationFolder = "conf/active/"
-	backupFolder        = "content/backup/"
-	contentFolder       = "content/"
-)
+// A RWMutex Map that contains the available Resources. Must unlock the reader first.
+var AvailableResources = struct {
+	sync.RWMutex
+	m map[string]*Resource
+}{m: make(map[string]*Resource)}
+
+// Fetcher is the main type. It will work with several Resources
+type Fetcher struct {
+	ConfigurationDir string
+	BackupDir        string
+	ContentDir       string
+}
 
 // Resource describes an external (distant) resource
 // UpdateInterval is a duration describing how often the resource should be fetched
@@ -39,55 +47,25 @@ type UnparsedResource struct {
 	FileName       string
 }
 
-// AvailableResources is a map that contains
-var AvailableResources = make(map[string]*Resource)
-
-// LoadAndStart loads all the active configurations and start the goroutines.
-func LoadAndStart() error {
-	files, err := ioutil.ReadDir(configurationFolder)
+// Start is the method associated to a Fetcher that will start all the goroutines
+// of file downloading and checking.
+func (f *Fetcher) Start() error {
+	files, err := ioutil.ReadDir(f.ConfigurationDir)
 	if err != nil {
 		log.Println("Could not read configuration folder :", err)
 		return err
 	}
 	for _, fd := range files {
 		log.Println("Loading Configuration :", fd.Name())
-		ext, err := LoadConfiguration(configurationFolder + fd.Name())
+		ext, err := LoadConfiguration(f.ContentDir, f.ConfigurationDir+fd.Name())
 		if err != nil {
 			log.Printf("Error with file %v. It won't be used. %v\n", fd.Name(), err)
 			continue
 		}
 		log.Printf("Starting External Resource Collection for %v (%v)\n", ext.FriendlyName, fd.Name())
-		go ext.PeriodicUpdate()
+		go ext.PeriodicUpdate(f)
 	}
 	return nil
-}
-
-// LoadConfiguration reads the configuration file and returns an ExternalResource
-func LoadConfiguration(configPath string) (Resource, error) {
-	conf, err := ioutil.ReadFile(configPath)
-	if err != nil {
-		log.Println("Could not read external resource configuration :", err)
-		return Resource{}, err
-	}
-	unparsedExternal := new(UnparsedResource)
-	err = yaml.Unmarshal(conf, &unparsedExternal)
-	if err != nil {
-		log.Println("Error parsing YAML :", err)
-		return Resource{}, err
-	}
-	duration, err := time.ParseDuration(unparsedExternal.UpdateInterval)
-	if err != nil {
-		log.Println("Error parsing Duration :", err)
-		return Resource{}, err
-	}
-	external := Resource{
-		UpdateInterval: duration,
-		FriendlyName:   unparsedExternal.FriendlyName,
-		URL:            unparsedExternal.URL,
-		FileName:       unparsedExternal.FileName,
-		FullPath:       contentFolder + unparsedExternal.FileName,
-	}
-	return external, nil
 }
 
 // CalculateIteration parses the backup folder for an ExternalResource and
@@ -118,64 +96,58 @@ func (ext *Resource) CalculateIteration(backupFolder string) error {
 }
 
 // PeriodicUpdate starts the periodic update for the Resource.
-func (ext *Resource) PeriodicUpdate() {
-	tmpFileName := contentFolder + ext.FileName + ".tmp"
-	currentFileName := contentFolder + ext.FileName
+func (ext *Resource) PeriodicUpdate(f *Fetcher) {
+	currentFileName := f.ContentDir + ext.FileName
+	tmpFileName := currentFileName + ".tmp"
 	mapName := ext.FileName[0 : len(ext.FileName)-len(filepath.Ext(ext.FileName))]
-	specificBackupFolder := backupFolder + mapName + "/"
+	specificBackupFolder := f.BackupDir + mapName + "/"
 
-	if err := CheckAndCreateFolder(contentFolder); err != nil {
+	if err := CheckAndCreateFolder(f.ConfigurationDir); err != nil {
 		log.Println(err)
 		return
 	}
-
-	if err := CheckAndCreateFolder(backupFolder); err != nil {
+	if err := CheckAndCreateFolder(f.BackupDir); err != nil {
 		log.Println(err)
 		return
 	}
-
 	if err := CheckAndCreateFolder(specificBackupFolder); err != nil {
 		log.Println(err)
 		return
 	}
-
 	if err := ext.CalculateIteration(specificBackupFolder); err != nil {
 		log.Println("Error calculating Iteration :", err)
 		return
 	}
-
 	if err := DownloadNamedFile(ext.URL, ext.FullPath); err != nil {
 		log.Println("Error dowloading file :", err)
 		return
 	}
 
-	tickChan := time.NewTicker(ext.UpdateInterval).C
+	tc := time.NewTicker(ext.UpdateInterval).C
 
 	log.Println("Resource Collection Started for", ext.FriendlyName)
-	AvailableResources[mapName] = ext
+	AvailableResources.Lock()
+	AvailableResources.m[mapName] = ext
+	AvailableResources.Unlock()
 	log.Printf("Added Available Resource %v as %v\n", ext.FriendlyName, mapName)
 
-	for {
-		<-tickChan
-
+	for range tc {
 		if err := DownloadNamedFile(ext.URL, tmpFileName); err != nil {
 			log.Println(err)
 			continue
 		}
-
 		same, err := SameFileCheck(currentFileName, tmpFileName)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
-
 		if same {
 			if err := os.Remove(tmpFileName); err != nil {
 				log.Println(err)
 				continue
 			}
 		} else {
-			if err := os.Rename(currentFileName, specificBackupFolder+ext.FileName+"."+strconv.Itoa(ext.Iterations)); err != nil {
+			if err := os.Rename(f.ConfigurationDir, specificBackupFolder+ext.FileName+"."+strconv.Itoa(ext.Iterations)); err != nil {
 				log.Println(err)
 				continue
 			}
@@ -187,4 +159,32 @@ func (ext *Resource) PeriodicUpdate() {
 			log.Printf("New content in %v. Downloaded and replaced.\n", ext.FriendlyName)
 		}
 	}
+}
+
+// LoadConfiguration reads the configuration file and returns an ExternalResource
+func LoadConfiguration(contentDir, configPath string) (Resource, error) {
+	conf, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		log.Println("Could not read external resource configuration :", err)
+		return Resource{}, err
+	}
+	unparsedExternal := new(UnparsedResource)
+	err = yaml.Unmarshal(conf, &unparsedExternal)
+	if err != nil {
+		log.Println("Error parsing YAML :", err)
+		return Resource{}, err
+	}
+	duration, err := time.ParseDuration(unparsedExternal.UpdateInterval)
+	if err != nil {
+		log.Println("Error parsing Duration :", err)
+		return Resource{}, err
+	}
+	external := Resource{
+		UpdateInterval: duration,
+		FriendlyName:   unparsedExternal.FriendlyName,
+		URL:            unparsedExternal.URL,
+		FileName:       unparsedExternal.FileName,
+		FullPath:       contentDir + unparsedExternal.FileName,
+	}
+	return external, nil
 }
