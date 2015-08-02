@@ -169,8 +169,7 @@ func LoadConfiguration(contentDir, configPath string) (Resource, error) {
 		return Resource{}, err
 	}
 	unparsedExternal := new(UnparsedResource)
-	err = yaml.Unmarshal(conf, &unparsedExternal)
-	if err != nil {
+	if err = yaml.Unmarshal(conf, &unparsedExternal); err != nil {
 		log.Println("Error parsing YAML :", err)
 		return Resource{}, err
 	}
