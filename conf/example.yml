@@ -1,0 +1,4 @@
+updateinterval: "10s"
+friendlyname: "An Article"
+url: "http://depado.markdownblog.com/2015-07-23-some-go-snippets-i-find-useful/raw"
+filename: "go-snippets"
