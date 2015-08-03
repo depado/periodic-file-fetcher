@@ -20,6 +20,10 @@ func (f *Fetcher) Start() error {
 		log.Println("Could not read configuration folder :", err)
 		return err
 	}
+	if err := f.checkDirs(); err != nil {
+		log.Println(err)
+		return err
+	}
 	for _, fd := range files {
 		log.Println("Loading Configuration :", fd.Name())
 		ext, err := loadConfiguration(f.ContentDir, f.ConfigurationDir+fd.Name())
@@ -27,8 +31,13 @@ func (f *Fetcher) Start() error {
 			log.Printf("Error with file %v. It won't be used. %v\n", fd.Name(), err)
 			continue
 		}
+		ext.Fetcher = f
 		log.Printf("Starting External Resource Collection for %v (%v)\n", ext.FriendlyName, fd.Name())
-		go ext.periodicUpdate(f)
+		go ext.periodicUpdate()
 	}
 	return nil
+}
+
+func (f Fetcher) checkDirs() error {
+	return createDirsIfNeeded(f.ConfigurationDir, f.ContentDir, f.BackupDir)
 }

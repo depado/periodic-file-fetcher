@@ -32,6 +32,7 @@ type Resource struct {
 	URL            string
 	Iterations     int
 	Sum            string
+	Fetcher        *Fetcher
 }
 
 // CalculateIteration parses the backup folder for an ExternalResource and
@@ -63,13 +64,13 @@ func (res *Resource) calculateIteration(backupFolder string) error {
 
 func (res *Resource) same(path string) (bool, error) {
 	if res.Sum == "" {
-		sum, err := generateMd5Sum(res.FullPath)
+		sum, err := md5Sum(res.FullPath)
 		if err != nil {
 			return false, err
 		}
 		res.Sum = sum
 	}
-	sum, err := generateMd5Sum(path)
+	sum, err := md5Sum(path)
 	if err != nil {
 		return false, err
 	}
@@ -94,23 +95,16 @@ func (res *Resource) download(path string) error {
 }
 
 // PeriodicUpdate starts the periodic update for the Resource.
-func (res *Resource) periodicUpdate(f *Fetcher) {
+func (res *Resource) periodicUpdate() {
 	tmpFileName := res.FullPath + ".tmp"
 	mapName := res.FileName[0 : len(res.FileName)-len(filepath.Ext(res.FileName))]
-	specificBackupFolder := f.BackupDir + mapName + "/"
+	specificBackupFolder := res.Fetcher.BackupDir + mapName + "/"
 
-	if err := checkAndCreateFolder(f.ConfigurationDir); err != nil {
+	if err := createDirsIfNeeded(specificBackupFolder); err != nil {
 		log.Println(err)
 		return
 	}
-	if err := checkAndCreateFolder(f.BackupDir); err != nil {
-		log.Println(err)
-		return
-	}
-	if err := checkAndCreateFolder(specificBackupFolder); err != nil {
-		log.Println(err)
-		return
-	}
+
 	if err := res.calculateIteration(specificBackupFolder); err != nil {
 		log.Println("Error calculating Iteration :", err)
 		return
@@ -144,7 +138,7 @@ func (res *Resource) periodicUpdate(f *Fetcher) {
 				continue
 			}
 		} else {
-			if err := os.Rename(f.ConfigurationDir, specificBackupFolder+res.FileName+"."+strconv.Itoa(res.Iterations)); err != nil {
+			if err := os.Rename(res.Fetcher.ConfigurationDir, specificBackupFolder+res.FileName+"."+strconv.Itoa(res.Iterations)); err != nil {
 				log.Println(err)
 				continue
 			}
@@ -153,7 +147,7 @@ func (res *Resource) periodicUpdate(f *Fetcher) {
 				log.Println(err)
 				continue
 			}
-			sum, err := generateMd5Sum(res.FullPath)
+			sum, err := md5Sum(res.FullPath)
 			if err != nil {
 				log.Println(err)
 				continue

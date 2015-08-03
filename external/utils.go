@@ -12,9 +12,9 @@ import (
 const filechunk = 8192
 
 // checkAndCreateFolder checks if a folder exists, if not, creates it.
-func checkAndCreateFolder(fp string) error {
+func createDirIfNeeded(fp string) error {
 	if _, err := os.Stat(fp); os.IsNotExist(err) {
-		log.Printf("Could not find %v folder. Creating it.\n", fp)
+		log.Printf("Creating %v directory.\n", fp)
 		os.Mkdir(fp, 0777)
 	} else if err != nil {
 		return err
@@ -22,8 +22,17 @@ func checkAndCreateFolder(fp string) error {
 	return nil
 }
 
+func createDirsIfNeeded(paths ...string) error {
+	for _, p := range paths {
+		if err := createDirIfNeeded(p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // generateMd5Sum generates the md5sum of a file.
-func generateMd5Sum(fn string) (string, error) {
+func md5Sum(fn string) (string, error) {
 	file, err := os.Open(fn)
 	if err != nil {
 		return "", err
