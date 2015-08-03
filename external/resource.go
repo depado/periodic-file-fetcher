@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// A RWMutex Map that contains the available Resources. Must unlock the reader first.
+// A RWMutex Map that contains the available Resources.
 var AvailableResources = struct {
 	sync.RWMutex
 	m map[string]*Resource
@@ -35,7 +35,7 @@ type Resource struct {
 	Fetcher        *Fetcher
 }
 
-// CalculateIteration parses the backup folder for an ExternalResource and
+// calculateIteration parses the backup folder for an ExternalResource and
 // determines the highest iteration by reading the file names.
 func (res *Resource) calculateIteration(backupFolder string) error {
 	files, err := ioutil.ReadDir(backupFolder)
@@ -62,6 +62,8 @@ func (res *Resource) calculateIteration(backupFolder string) error {
 	return nil
 }
 
+// same checks whether or not the actual file and the path file have the same
+// md5sum. Also initialize the resource Sum if it is not set yet.
 func (res *Resource) same(path string) (bool, error) {
 	if res.Sum == "" {
 		sum, err := md5Sum(res.FullPath)
@@ -77,6 +79,7 @@ func (res *Resource) same(path string) (bool, error) {
 	return res.Sum == sum, nil
 }
 
+// download downloads the resource and saves it to the given path.
 func (res *Resource) download(path string) error {
 	out, err := os.Create(path)
 	if err != nil {
@@ -94,7 +97,7 @@ func (res *Resource) download(path string) error {
 	return nil
 }
 
-// PeriodicUpdate starts the periodic update for the Resource.
+// periodicUpdate starts the periodic update for the Resource.
 func (res *Resource) periodicUpdate() {
 	tmpFileName := res.FullPath + ".tmp"
 	mapName := res.FileName[0 : len(res.FileName)-len(filepath.Ext(res.FileName))]
@@ -158,7 +161,7 @@ func (res *Resource) periodicUpdate() {
 	}
 }
 
-// LoadConfiguration reads the configuration file and returns an ExternalResource
+// loadConfiguration reads the configuration file and returns a Resource
 func loadConfiguration(contentDir, configPath string) (Resource, error) {
 	conf, err := ioutil.ReadFile(configPath)
 	if err != nil {

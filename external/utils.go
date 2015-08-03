@@ -8,10 +8,10 @@ import (
 	"os"
 )
 
-// We set the filechunk to 8kb
+// We set the filechunk to 8kb (used by the md5Sum function)
 const filechunk = 8192
 
-// checkAndCreateFolder checks if a folder exists, if not, creates it.
+// createDirIfNeeded checks if a folder exists, if not, creates it.
 func createDirIfNeeded(fp string) error {
 	if _, err := os.Stat(fp); os.IsNotExist(err) {
 		log.Printf("Creating %v directory.\n", fp)
@@ -22,6 +22,7 @@ func createDirIfNeeded(fp string) error {
 	return nil
 }
 
+// createDirsIfNeeded creates the dirs given as parameters if they don't exist.
 func createDirsIfNeeded(paths ...string) error {
 	for _, p := range paths {
 		if err := createDirIfNeeded(p); err != nil {
@@ -31,7 +32,7 @@ func createDirsIfNeeded(paths ...string) error {
 	return nil
 }
 
-// generateMd5Sum generates the md5sum of a file.
+// md5Sum generates the md5 sum of a file.
 func md5Sum(fn string) (string, error) {
 	file, err := os.Open(fn)
 	if err != nil {
